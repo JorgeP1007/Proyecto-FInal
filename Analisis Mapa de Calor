@@ -1,0 +1,83 @@
+import random
+import matplotlib.pyplot as plt
+import numpy as np
+import simpy
+
+# Definición de las secciones dentro del supermercado con iniciales
+PASILLOS = {
+    'lácteos': ['leche (L)', 'queso (Q)', 'yogur (Y)', 'mantequilla (M)'],
+    'frutas/verduras': ['manzanas (M)', 'zanahorias (Z)', 'plátanos (P)', 'aguacates (A)'],
+    'paquetes': ['pasta (P)', 'arroz (A)', 'galletas (G)', 'frijoles (F)'],
+    'bebidas': ['agua (A)', 'refrescos (R)', 'cerveza (C)', 'jugos (J)'],
+    'congelados': ['helado (H)', 'pizza (P)', 'verduras congeladas (VC)', 'nuggets (N)']
+}
+
+# Asignación de números únicos a cada pasillo y sección
+pasillo_indices = {pasillo: i for i, pasillo in enumerate(PASILLOS.keys())}
+seccion_indices = {seccion: (pasillo, i) for pasillo, secciones in PASILLOS.items() for i, seccion in enumerate(secciones)}
+
+# Función para simular la llegada de clientes al supermercado
+def llegada_clientes(env, supermercado, cajeros):
+    cliente_id = 0
+    while True:
+        yield env.timeout(round(random.expovariate(1.0 / 4), 2))  # Intervalo entre llegadas sigue una distribución exponencial con media de 4
+
+        cliente_id += 1
+        pasillo = random.choice(list(PASILLOS.keys()))
+        seccion = random.choice(PASILLOS[pasillo])
+        env.process(atender_cliente(env, cliente_id, supermercado, cajeros, pasillo, seccion))
+
+# Función para simular la atención a un cliente en el supermercado
+def atender_cliente(env, cliente_id, supermercado, cajeros, pasillo, seccion):
+    with supermercado.request() as req:
+        yield req
+        with cajeros.request() as req_cajero:
+            print(f"Llega cliente {cliente_id} al supermercado a tiempo {round(env.now, 2)} y va al pasillo de {pasillo}, sección de {seccion}")
+            trafico_por_seccion[pasillo][seccion].append(round(env.now, 2))
+            yield req_cajero
+            tiempo_compras = round(random.uniform(10, 30), 2)
+            yield env.timeout(tiempo_compras)
+            tiempo_recorrido = round(random.uniform(1, 5), 2)
+            yield env.timeout(tiempo_recorrido)
+            tiempo_pago = round(random.uniform(2, 5), 2)
+            yield env.timeout(tiempo_pago)
+            print(f"Cliente {cliente_id} termina de pagar a tiempo {round(env.now, 2)}")
+
+# Configuración de la simulación
+env = simpy.Environment()
+cajeros = simpy.Resource(env, capacity=4)
+supermercado = simpy.Resource(env, capacity=10)
+
+# Definir un diccionario para almacenar el tráfico por sección
+trafico_por_seccion = {pasillo: {seccion: [] for seccion in secciones} for pasillo, secciones in PASILLOS.items()}
+
+# Iniciar la simulación con los eventos de llegada de clientes
+env.process(llegada_clientes(env, supermercado, cajeros))
+
+# Ejecutar la simulación por 400 unidades de tiempo simuladas
+env.run(until=480)
+
+# Generar el mapa de calor
+fig, axs = plt.subplots(len(PASILLOS), 1, figsize=(15, 25), sharex=True)
+
+for i, (pasillo, secciones) in enumerate(PASILLOS.items()):
+    heatmap_data = np.zeros((1, len(secciones)))
+    for j, seccion in enumerate(secciones):
+        heatmap_data[0, j] = len(trafico_por_seccion[pasillo][seccion])
+
+    ax = axs[i]
+    cax = ax.matshow(heatmap_data, cmap='inferno', aspect='auto', vmin=0, vmax=12)
+    ax.set_yticks([])
+    ax.set_xticks(np.arange(len(secciones)))
+    # Usar nombres completos para etiquetas de secciones
+    nombres_completos = [seccion.split(' (')[0] for seccion in secciones]
+    ax.set_xticklabels([]) 
+    # Añadir anotaciones dentro de cada celda
+    for j in range(len(secciones)):
+        ax.text(j, 0, nombres_completos[j], va='center', ha='center', color='white')
+
+# Añadir una barra de color vertical a la derecha de los subplots y ajustar el tamaño
+fig.colorbar(cax, ax=axs, location='right', fraction=0.07, pad=0.09)  # Aumentar tamaño de la barra y ajustar espacio
+plt.subplots_adjust(right=0.80, hspace=0.4)  # Ajustar espacio a la derecha y vertical entre subplots
+plt.suptitle('Mapa de Calor de Tráfico en el Supermercado', y=0.9)  # Ajustar el título más abajo
+plt.show()
